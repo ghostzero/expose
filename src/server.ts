@@ -7,7 +7,9 @@ const app = express()
 const http = createServer(app)
 const io = new Server(http)
 
-let nextPort = 10000
+let minPort = 10000
+const maxPort = 20000
+const allocatedPorts = new Set()
 
 const clients: {
     [id: string]: net.Socket
@@ -17,6 +19,10 @@ const tcpServers: net.Server[] = []
 
 app.get('/', (req, res) => {
     res.send('<h1>Hello world</h1>')
+})
+
+app.get('/ports', (req, res) => {
+    res.json(Array.from(allocatedPorts))
 })
 
 io.on('connection', (ws) => {
@@ -30,12 +36,8 @@ io.on('connection', (ws) => {
 
     ws.on('expose', async (port) => {
         console.log(`Client requested to expose their localhost:${port}`)
-        let requestedPort = nextPort++
-
-        // Check for port availability
-        while (!await isPortAvailable(requestedPort)) {
-            requestedPort = nextPort++
-        }
+        let requestedPort = await findNextAvailablePort()
+        allocatedPorts.add(requestedPort)
 
         const tcpServer = net.createServer()
         tcpServers.push(tcpServer)
@@ -84,7 +86,14 @@ io.on('connection', (ws) => {
     ws.on('disconnect', () => {
         console.log('user disconnected')
         // Cleanup resources for this WebSocket client
-        userResources.tcpServers.forEach(server => server.close())
+        userResources.tcpServers.forEach(server => {
+            const address = server.address()
+            if (address && typeof address === 'object') {
+                console.log(`Closing TCP server on port ${address.port}`)
+                allocatedPorts.delete(address.port)
+            }
+            server.close()
+        })
         userResources.clientSockets.forEach(id => {
             if (clients[id]) {
                 clients[id].destroy()
@@ -101,6 +110,15 @@ io.on('connection', (ws) => {
 http.listen(3000, () => {
     console.log('server running at http://localhost:3000')
 })
+
+async function findNextAvailablePort() {
+    for (let port = minPort; port <= maxPort; port++) {
+        if (!allocatedPorts.has(port) && await isPortAvailable(port)) {
+            return port
+        }
+    }
+    throw new Error('No available ports')
+}
 
 function isPortAvailable(port: number) {
     return new Promise(resolve => {
