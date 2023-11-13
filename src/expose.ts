@@ -1,8 +1,18 @@
 import { io } from 'socket.io-client'
 import net from 'net'
+import jwt from 'jsonwebtoken'
+import axios from 'axios'
 
 const PORT_TO_EXPOSE = parseInt(process.argv[2]) || 4455
-const socket = io('http://localhost:3000')
+const CUSTOM_SECRET = process.argv[3]
+
+const token = jwt.sign({
+    sub: 1,
+}, 'your_secret_key')
+
+const socket = io('http://localhost:3000', {
+    query: {token},
+})
 
 const tcpClients: {
     [id: string]: net.Socket
@@ -10,11 +20,28 @@ const tcpClients: {
 
 socket.on('connect', () => {
     console.log('Connected to server, requesting to expose port:', PORT_TO_EXPOSE)
-    socket.emit('expose', PORT_TO_EXPOSE)
+    socket.emit('expose', PORT_TO_EXPOSE, CUSTOM_SECRET)
 })
 
-socket.on('exposed', (localPort, exposedUrl) => {
-    console.log(`Server is exposing ${localPort} at ${exposedUrl}`)
+socket.on('exposed', ({port, url, secret}) => {
+    console.log(`Server is exposing ${port} at ${url} using secret ${secret}`)
+
+    const remotePort = url.split(':')[2]
+
+    // allow list host
+    axios.post('http://localhost:3000/allow-list', jwt.sign({
+        url,
+        ip: '::ffff:127.0.0.1',
+        port: remotePort,
+    }, secret), {
+        headers: {
+            'Content-Type': 'text/plain',
+        },
+    }).then(res => {
+        console.log('allow list result:', res.data)
+    }).catch(err => {
+        console.log('allow list error:', err.response.data)
+    })
 })
 
 socket.on('tcp:connection', (receivedId) => {
