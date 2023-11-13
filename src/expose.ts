@@ -20,40 +20,39 @@ socket.on('exposed', (localPort, exposedUrl) => {
 socket.on('tcp:connection', (receivedId) => {
     console.log(`Establishing TCP client for id: ${receivedId}`)
 
-    // Create a TCP client to connect to localhost:4455
-    tcpClients[receivedId] = net.createConnection({port: 4455, host: 'localhost'}, () => {
+    const tcpClient = net.createConnection({port: PORT_TO_EXPOSE, host: 'localhost'}, () => {
         console.log(`TCP client connected to localhost:${PORT_TO_EXPOSE}`)
     })
 
-    tcpClients[receivedId].on('data', (data) => {
+    tcpClients[receivedId] = tcpClient
+
+    tcpClient.on('data', (data) => {
         socket.emit('tcp:data', receivedId, data)
     })
 
-    tcpClients[receivedId].on('end', () => {
+    tcpClient.on('end', () => {
         console.log(`TCP client disconnected from localhost:${PORT_TO_EXPOSE}`)
     })
 
-    tcpClients[receivedId].on('error', (err) => {
+    tcpClient.on('error', (err) => {
         console.error(`Error in TCP client for id ${receivedId}: ${err.message}`)
-        tcpClients[receivedId].end()
+        tcpClient.end()
     })
 })
 
 socket.on(`tcp:data`, (receivedId, data) => {
-    if (tcpClients[receivedId]) {
-        tcpClients[receivedId].write(data)
-    }
+    tcpClients[receivedId]?.write(data)
 })
 
 socket.on(`tcp:close`, (receivedId) => {
-    if (tcpClients[receivedId]) {
-        console.log(`Closing TCP client for id: ${receivedId}`)
-        tcpClients[receivedId].end()
-    }
+    console.log(`Closing TCP client for id: ${receivedId}`)
+    tcpClients[receivedId]?.end()
 })
 
 socket.on('disconnect', () => {
     console.log('Disconnected from server')
+    // Cleanup resources on client side
+    Object.values(tcpClients).forEach(client => client.end())
 })
 
 socket.on('error', (err) => {
