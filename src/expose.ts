@@ -11,7 +11,7 @@ const token = jwt.sign({
 }, 'your_secret_key')
 
 const socket = io('http://localhost:3000', {
-    query: {token},
+    query: {token, version: 1},
 })
 
 const tcpClients: {

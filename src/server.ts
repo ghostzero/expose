@@ -170,8 +170,8 @@ io.on('connection', (ws) => {
         console.log('user disconnected')
         // Close and remove all TCP servers allocated to the user
         userResources.tcpServers.forEach(server => {
+            const address = server.address()
             server.close(() => {
-                const address = server.address()
                 if (address && typeof address === 'object') {
                     console.log(`Closed TCP server on port ${address.port}`)
                     allocatedPorts.delete(address.port)
