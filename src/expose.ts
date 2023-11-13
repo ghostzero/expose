@@ -20,7 +20,7 @@ const tcpClients: {
 
 socket.on('connect', () => {
     console.log('Connected to server, requesting to expose port:', PORT_TO_EXPOSE)
-    socket.emit('expose', PORT_TO_EXPOSE, CUSTOM_SECRET)
+    socket.emit('expose', {port: PORT_TO_EXPOSE, secret: CUSTOM_SECRET})
 })
 
 socket.on('exposed', ({port, url, secret}) => {
@@ -44,17 +44,17 @@ socket.on('exposed', ({port, url, secret}) => {
     })
 })
 
-socket.on('tcp:connection', (receivedId) => {
-    console.log(`Establishing TCP client for id: ${receivedId}`)
+socket.on('tcp:connection', ({id}) => {
+    console.log(`Establishing TCP client for id: ${id}`)
 
     const tcpClient = net.createConnection({port: PORT_TO_EXPOSE, host: 'localhost'}, () => {
         console.log(`TCP client connected to localhost:${PORT_TO_EXPOSE}`)
     })
 
-    tcpClients[receivedId] = tcpClient
+    tcpClients[id] = tcpClient
 
     tcpClient.on('data', (data) => {
-        socket.emit('tcp:data', receivedId, data)
+        socket.emit('tcp:data', {id, data})
     })
 
     tcpClient.on('end', () => {
@@ -62,18 +62,18 @@ socket.on('tcp:connection', (receivedId) => {
     })
 
     tcpClient.on('error', (err) => {
-        console.error(`Error in TCP client for id ${receivedId}: ${err.message}`)
+        console.error(`Error in TCP client for id ${id}: ${err.message}`)
         tcpClient.end()
     })
 })
 
-socket.on(`tcp:data`, (receivedId, data) => {
-    tcpClients[receivedId]?.write(data)
+socket.on(`tcp:data`, ({id, data}) => {
+    tcpClients[id]?.write(data)
 })
 
-socket.on(`tcp:close`, (receivedId) => {
-    console.log(`Closing TCP client for id: ${receivedId}`)
-    tcpClients[receivedId]?.end()
+socket.on(`tcp:close`, ({id}) => {
+    console.log(`Closing TCP client for id: ${id}`)
+    tcpClients[id]?.end()
 })
 
 socket.on('disconnect', () => {

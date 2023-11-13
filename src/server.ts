@@ -95,7 +95,7 @@ io.on('connection', (ws) => {
         clientSockets: new Set<string>(),
     }
 
-    ws.on('expose', async (port, secret) => {
+    ws.on('expose', async ({port, secret}) => {
         console.log(`Client requested to expose their localhost:${port}`)
         let requestedPort = await findNextAvailablePort()
         allocatedPorts.add(requestedPort)
@@ -130,7 +130,7 @@ io.on('connection', (ws) => {
             console.log(`client ${id} connected to tcp server`)
 
             clientSocket.on('data', (data) => {
-                ws.emit('tcp:data', id, data)
+                ws.emit('tcp:data', {id, data})
             })
 
             clientSocket.on('close', () => {
@@ -144,14 +144,14 @@ io.on('connection', (ws) => {
                 console.error(`Error in TCP client ${id}: ${err.message}`)
             })
 
-            ws.emit('tcp:connection', id)
+            ws.emit('tcp:connection', {id})
         })
 
-        ws.on('tcp:data', (id, data) => {
+        ws.on('tcp:data', ({id, data}) => {
             clients[id]?.write(data)
         })
 
-        ws.on('tcp:close', (id) => {
+        ws.on('tcp:close', ({id}) => {
             clients[id]?.end()
         })
 
