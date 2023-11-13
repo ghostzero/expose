@@ -91,7 +91,10 @@ io.on('connection', (ws) => {
 
     // Store references to user-specific resources for cleanup
     const userResources = {
-        tcpServers: new Set<net.Server>(),
+        tcpServers: new Set<{
+            requestedPort: number,
+            tcpServer: net.Server,
+        }>(),
         clientSockets: new Set<string>(),
     }
 
@@ -107,7 +110,7 @@ io.on('connection', (ws) => {
 
         const tcpServer = net.createServer()
         tcpServers.push(tcpServer)
-        userResources.tcpServers.add(tcpServer)
+        userResources.tcpServers.add({requestedPort, tcpServer})
 
         tcpServer.on('connection', (clientSocket) => {
             const clientIP = clientSocket.remoteAddress as string
@@ -170,13 +173,10 @@ io.on('connection', (ws) => {
         console.log('user disconnected')
         // Close and remove all TCP servers allocated to the user
         userResources.tcpServers.forEach(server => {
-            const address = server.address()
-            server.close(() => {
-                if (address && typeof address === 'object') {
-                    console.log(`Closed TCP server on port ${address.port}`)
-                    allocatedPorts.delete(address.port)
-                    delete allowLists[address.port]
-                }
+            server.tcpServer.close(() => {
+                console.log(`Closed TCP server on port ${server.requestedPort}`)
+                allocatedPorts.delete(server.requestedPort)
+                delete allowLists[server.requestedPort]
             })
         })
 
