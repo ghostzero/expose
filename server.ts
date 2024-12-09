@@ -5,6 +5,8 @@ import net from 'net'
 import jwt from 'jsonwebtoken'
 import * as crypto from 'crypto'
 import 'dotenv/config'
+// @ts-ignore
+import petname from 'node-petname'
 
 const app = express()
 const http: HttpServer = createServer(app)
@@ -13,9 +15,11 @@ const io: Server = new Server(http)
 const minPort: number = 4456
 const maxPort: number = minPort + 1000
 const allocatedPorts: Set<number> = new Set()
+const allocatedAliases: Set<string> = new Set()
 
 const allowLists: {
     [port: number]: {
+        alias: string
         secret: string
         ips: Set<string>
     }
@@ -45,6 +49,16 @@ app.use(express.text(), express.json())
 
 app.get('/', (_req: Request, res: Response) => {
     res.send('<h1>Hello world</h1>')
+})
+
+app.get('/l/:alias', (req: Request, res: Response) => {
+    // find the alias and their corresponding port
+    const aliases = Object.entries(allowLists).map(([port, {alias}]) => ({port, alias}))
+    const alias = aliases.find(({alias}) => alias === req.params.alias)
+
+    if (!alias) return res.status(404).send('Alias not found')
+
+    res.json(alias)
 })
 
 app.get('/ports', authenticateToken, (_req: Request, res: Response) => {
@@ -96,19 +110,19 @@ io.on('connection', (ws) => {
         }>,
         clientSockets: Set<string>,
     } = {
-        tcpServers: new Set<{
-            requestedPort: number,
-            tcpServer: net.Server,
-        }>(),
-        clientSockets: new Set<string>(),
+        tcpServers: new Set(),
+        clientSockets: new Set(),
     }
 
-    ws.on('expose', async ({port, secret}: { port: number, secret: string }) => {
+    ws.on('expose', async ({port, secret, alias}: { port: number, secret?: string, alias?: string }) => {
         console.log(`Client requested to expose their localhost:${port}`)
         const requestedPort: number = await findNextAvailablePort()
+        const requestedAlias: string = findNextAvailableAlias(alias)
         allocatedPorts.add(requestedPort)
+        allocatedAliases.add(requestedAlias)
 
         allowLists[requestedPort] = {
+            alias: requestedAlias,
             secret: secret || crypto.randomBytes(32).toString('base64'),
             ips: new Set(),
         }
@@ -135,7 +149,7 @@ io.on('connection', (ws) => {
             clients[id] = clientSocket
             userResources.clientSockets.add(id)
 
-            console.log(`client ${id} connected to tcp server`)
+            console.log(`client ${id} (${clientIP}) connected to tcp server`)
 
             clientSocket.on('data', (data) => {
                 ws.emit('tcp:data', {id, data})
@@ -156,7 +170,6 @@ io.on('connection', (ws) => {
         })
 
         ws.on('tcp:data', ({id, data, type}) => {
-            console.log(`Received data from client ${id}, ${data.length} bytes, type: ${type}`)
             clients[id]?.write(data)
         })
 
@@ -170,6 +183,7 @@ io.on('connection', (ws) => {
 
         ws.emit('exposed', {
             port,
+            alias: requestedAlias,
             url: `${process.env.APP_URL}:${requestedPort}`,
             secret: allowLists[requestedPort].secret,
         })
@@ -182,6 +196,7 @@ io.on('connection', (ws) => {
             server.tcpServer.close(() => {
                 console.log(`Closed TCP server on port ${server.requestedPort}`)
                 allocatedPorts.delete(server.requestedPort)
+                allocatedAliases.delete(allowLists[server.requestedPort].alias)
                 delete allowLists[server.requestedPort]
             })
         })
@@ -204,7 +219,7 @@ http.listen(3000, () => {
     console.log(`server running on port 3000 and exposes via ${process.env.APP_URL}`)
 })
 
-async function findNextAvailablePort() {
+const findNextAvailablePort = async () => {
     for (let port = minPort; port <= maxPort; port++) {
         if (!allocatedPorts.has(port) && await isPortAvailable(port)) {
             return port
@@ -213,7 +228,25 @@ async function findNextAvailablePort() {
     throw new Error('No available ports')
 }
 
-function isPortAvailable(port: number) {
+const findNextAvailableAlias = (requestedAlias: string | undefined): string => {
+    if (requestedAlias && !allocatedAliases.has(requestedAlias)) {
+        return requestedAlias
+    }
+
+    for (let i = 0; i < 100; i++) {
+        const random4Letters = Math.random().toString(36).slice(2, 6)
+        const randomAnimalName = petname(2, '-')
+        const fallbackAlias = `exposed-${randomAnimalName}-${random4Letters}`
+
+        if (!allocatedAliases.has(fallbackAlias)) {
+            return fallbackAlias
+        }
+    }
+
+    throw new Error('No available aliases')
+}
+
+const isPortAvailable = (port: number) => {
     return new Promise(resolve => {
         const testServer = net.createServer()
             .once('error', (err: Error & { code: string }) => {
