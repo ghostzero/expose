@@ -2,16 +2,18 @@ import { io } from 'socket.io-client'
 import net from 'net'
 import jwt, { JwtPayload } from 'jsonwebtoken'
 import axios from 'axios'
+import 'dotenv/config'
 
 const PORT_TO_EXPOSE = parseInt(process.argv[2]) || 4455
 const CUSTOM_SECRET = process.argv[3]
 const CUSTOM_ALIAS = process.argv[4]
+const BASE_URL = process.env.BASE_URL || 'https://irl-fkb1-2.ghostzero.de:3000'
 
 const token: string = jwt.sign({
     sub: '1',
 } as JwtPayload, 'your_secret_key')
 
-const socket = io('http://localhost:3000', {
+const socket = io(BASE_URL, {
     query: {token, version: 1},
 })
 
@@ -24,15 +26,14 @@ socket.on('connect', () => {
     socket.emit('expose', {port: PORT_TO_EXPOSE, secret: CUSTOM_SECRET, alias: CUSTOM_ALIAS})
 })
 
-socket.on('exposed', ({port, url, secret, alias}) => {
+socket.on('exposed', async ({port, url, secret, alias}) => {
     console.log(`Port ${port} exposed at ${url} with secret ${secret} and alias ${alias}`)
 
     const remotePort = url.split(':')[2]
 
     // allow list host machine IPs
-    const localIps = ['::ffff:127.0.0.1', '::1', '127.0.0.1']
-    localIps.forEach(ip => axios.post('http://localhost:3000/allow-list', jwt.sign({
-        url,
+    const localIps = ['::ffff:127.0.0.1', '::1', '127.0.0.1', '::ffff:109.91.131.189']
+    localIps.forEach(ip => axios.post(`${BASE_URL}/allow-list`, jwt.sign({
         ip,
         port: remotePort,
     }, secret), {
@@ -40,9 +41,9 @@ socket.on('exposed', ({port, url, secret, alias}) => {
             'Content-Type': 'text/plain',
         },
     }).then(res => {
-        console.log('allow list result:', res.data)
+        console.log(`allow list result ${remotePort}:`, res.data)
     }).catch(err => {
-        console.log('allow list error:', err.response.data)
+        console.log(`allow list error ${remotePort}:`, err.response.data)
     }))
 })
 

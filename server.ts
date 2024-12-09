@@ -1,5 +1,6 @@
-import express, { NextFunction, Request, Response } from 'express'
-import { createServer, Server as HttpServer } from 'http'
+import express, { Express, NextFunction, Request, Response } from 'express'
+import { createServer as createHttpServer, Server as HttpServer } from 'http'
+import { createServer as createHttpsServer } from 'https'
 import { Server, Socket } from 'socket.io'
 import net from 'net'
 import jwt from 'jsonwebtoken'
@@ -7,8 +8,21 @@ import * as crypto from 'crypto'
 import 'dotenv/config'
 // @ts-ignore
 import petname from 'node-petname'
+import * as fs from 'node:fs'
 
-const app = express()
+const privateKeyPath = process.env.SSL_KEY_PATH
+const certificatePath = process.env.SSL_CERT_PATH
+
+const createServer = (app: Express): HttpServer => {
+    return privateKeyPath && certificatePath
+        ? createHttpsServer({
+            key: fs.readFileSync(privateKeyPath),
+            cert: fs.readFileSync(certificatePath),
+        }, app)
+        : createHttpServer(app)
+}
+
+const app: Express = express()
 const http: HttpServer = createServer(app)
 const io: Server = new Server(http)
 
