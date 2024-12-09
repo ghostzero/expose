@@ -1,17 +1,18 @@
 import express, { NextFunction, Request, Response } from 'express'
-import { createServer } from 'node:http'
-import { Server } from 'socket.io'
+import { createServer, Server as HttpServer } from 'http'
+import { Server, Socket } from 'socket.io'
 import net from 'net'
 import jwt from 'jsonwebtoken'
 import * as crypto from 'crypto'
+import 'dotenv/config'
 
 const app = express()
-const http = createServer(app)
-const io = new Server(http)
+const http: HttpServer = createServer(app)
+const io: Server = new Server(http)
 
-let minPort = 4456
-const maxPort = minPort + 1000
-const allocatedPorts = new Set()
+const minPort: number = 4456
+const maxPort: number = minPort + 1000
+const allocatedPorts: Set<number> = new Set()
 
 const allowLists: {
     [port: number]: {
@@ -32,7 +33,7 @@ const authenticateToken = (req: Request, res: Response, next: NextFunction) => {
 
     if (token == null) return res.sendStatus(401)
 
-    jwt.verify(token, 'your_secret_key', (err, user) => {
+    jwt.verify(token, 'your_secret_key', (err: unknown, user: unknown) => {
         if (err) return res.sendStatus(403)
         // @ts-ignore
         req.user = user
@@ -42,20 +43,18 @@ const authenticateToken = (req: Request, res: Response, next: NextFunction) => {
 
 app.use(express.text(), express.json())
 
-app.get('/', (req, res) => {
+app.get('/', (_req: Request, res: Response) => {
     res.send('<h1>Hello world</h1>')
 })
 
-app.get('/ports', authenticateToken, (req, res) => {
+app.get('/ports', authenticateToken, (_req: Request, res: Response) => {
     res.json(Array.from(allocatedPorts))
 })
 
-app.post('/allow-list', (req, res) => {
+app.post('/allow-list', (req: Request, res: Response) => {
     if (!req.body) return res.status(400).send('Token is required')
 
-    const unverified = jwt.decode(req.body as string) as {
-        port?: number
-    } || undefined
+    const unverified: any = jwt.decode(req.body as string)
 
     if (!unverified) return res.status(400).send('Invalid token')
     if (!unverified.port) return res.status(400).send('Port is required')
@@ -76,11 +75,11 @@ app.post('/allow-list', (req, res) => {
 })
 
 
-io.use((socket, next) => {
+io.use((socket: Socket, next: any) => {
     const token = socket.handshake.query.token as string
     jwt.verify(token, 'your_secret_key', (err, decoded) => {
         if (err) return next(new Error('Authentication error'))
-        // @ts-ignore
+        // @ts-ignored
         socket.decoded = decoded
         next()
     })
@@ -90,7 +89,13 @@ io.on('connection', (ws) => {
     console.log('a user connected')
 
     // Store references to user-specific resources for cleanup
-    const userResources = {
+    const userResources: {
+        tcpServers: Set<{
+            requestedPort: number,
+            tcpServer: net.Server,
+        }>,
+        clientSockets: Set<string>,
+    } = {
         tcpServers: new Set<{
             requestedPort: number,
             tcpServer: net.Server,
@@ -98,9 +103,9 @@ io.on('connection', (ws) => {
         clientSockets: new Set<string>(),
     }
 
-    ws.on('expose', async ({port, secret}) => {
+    ws.on('expose', async ({port, secret}: { port: number, secret: string }) => {
         console.log(`Client requested to expose their localhost:${port}`)
-        let requestedPort = await findNextAvailablePort()
+        const requestedPort: number = await findNextAvailablePort()
         allocatedPorts.add(requestedPort)
 
         allowLists[requestedPort] = {
@@ -108,7 +113,7 @@ io.on('connection', (ws) => {
             ips: new Set(),
         }
 
-        const tcpServer = net.createServer()
+        const tcpServer: net.Server = net.createServer()
         tcpServers.push(tcpServer)
         userResources.tcpServers.add({requestedPort, tcpServer})
 
@@ -126,7 +131,7 @@ io.on('connection', (ws) => {
                 return
             }
 
-            const id = Math.random().toString(36).substr(2, 9)
+            const id = Math.random().toString(36).slice(2, 9)
             clients[id] = clientSocket
             userResources.clientSockets.add(id)
 
@@ -150,7 +155,8 @@ io.on('connection', (ws) => {
             ws.emit('tcp:connection', {id})
         })
 
-        ws.on('tcp:data', ({id, data}) => {
+        ws.on('tcp:data', ({id, data, type}) => {
+            console.log(`Received data from client ${id}, ${data.length} bytes, type: ${type}`)
             clients[id]?.write(data)
         })
 
@@ -164,7 +170,7 @@ io.on('connection', (ws) => {
 
         ws.emit('exposed', {
             port,
-            url: `tcp://localhost:${requestedPort}`,
+            url: `${process.env.APP_URL}:${requestedPort}`,
             secret: allowLists[requestedPort].secret,
         })
     })
@@ -189,13 +195,13 @@ io.on('connection', (ws) => {
         })
     })
 
-    ws.on('error', (err) => {
+    ws.on('error', (err: Error) => {
         console.error(`WebSocket error: ${err.message}`)
     })
 })
 
 http.listen(3000, () => {
-    console.log('server running at http://localhost:3000')
+    console.log(`server running on port 3000 and exposes via ${process.env.APP_URL}`)
 })
 
 async function findNextAvailablePort() {
@@ -210,7 +216,7 @@ async function findNextAvailablePort() {
 function isPortAvailable(port: number) {
     return new Promise(resolve => {
         const testServer = net.createServer()
-            .once('error', (err: any) => {
+            .once('error', (err: Error & { code: string }) => {
                 if (err.code === 'EADDRINUSE') {
                     resolve(false)
                 } else {
