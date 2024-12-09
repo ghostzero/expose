@@ -30,6 +30,7 @@ const minPort: number = 4456
 const maxPort: number = minPort + 1000
 const allocatedPorts: Set<number> = new Set()
 const allocatedAliases: Set<string> = new Set()
+const secretLength: number = process.env.SECRET_LENGTH ? parseInt(process.env.SECRET_LENGTH) : 32
 
 const allowLists: {
     [port: number]: {
@@ -137,7 +138,7 @@ io.on('connection', (ws) => {
 
         allowLists[requestedPort] = {
             alias: requestedAlias,
-            secret: secret || crypto.randomBytes(32).toString('base64'),
+            secret: secret || crypto.randomBytes(secretLength).toString('base64'),
             ips: new Set(),
         }
 
