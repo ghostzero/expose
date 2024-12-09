@@ -9,6 +9,7 @@ import 'dotenv/config'
 // @ts-ignore
 import petname from 'node-petname'
 import * as fs from 'node:fs'
+import cors from 'cors'
 
 const privateKeyPath = process.env.SSL_KEY_PATH
 const certificatePath = process.env.SSL_CERT_PATH
@@ -23,6 +24,9 @@ const createServer = (app: Express): HttpServer => {
 }
 
 const app: Express = express()
+
+app.use(cors())
+
 const http: HttpServer = createServer(app)
 const io: Server = new Server(http)
 
